@@ -1,5 +1,5 @@
-function sigma(para; neval=1e6, Λgrid=Λgrid(para.kF), filename=nothing)
-    sigma, result = Sigma.MC(para; kgrid=Λgrid, ngrid=[-1, 0, 1], neval=neval, filename=filename)
+function sigma(para; neval=1e6, Λgrid=Λgrid(para.kF), filename=nothing, verbose = -1)
+    sigma, result = Sigma.MC(para; kgrid=Λgrid, ngrid=[-1, 0, 1], neval=neval, filename=filename,verbose = verbose)
     return sigma, result
 end
 

@@ -7,7 +7,7 @@ function aLambda_avg(para; kamp=[para.kF,], kamp2=kamp, n=[0, 0, 0, 0], theta=[0
     verbose=0
 )
     # data = Ver4.MC_Spec_Jl(para; kamp=kamp, kamp2=kamp2, theta=theta, phi=phi, n=n, neval=neval, filter=filter, channels=channels, transferLoop=transferLoop)
-    ver4, result = Ver4.MC_Spec_Jl(para; kamp=kamp, kamp2=kamp2, theta=theta, phi=phi, n=n, neval=neval, filename=filename,filter=filter, channels=channels, transferLoop=transferLoop)
+    ver4, result = Ver4.MC_Spec_Jl(para; kamp=kamp, kamp2=kamp2, theta=theta, phi=phi, n=n, neval=neval, filename=filename,filter=filter, channels=channels, transferLoop=transferLoop, verbose=verbose)
     return ver4, result
 end
 
