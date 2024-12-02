@@ -104,6 +104,85 @@ function KO(para::ParaMC, kamp=para.kF, kamp2=para.kF; a_s=0.0, N=100, mix=0.8, 
     end
 end
 
+function derive_f(para::ParaMC, kamp=para.kF, kamp2=para.kF; a_s=0.0, N=400, mix=0.8, verbose=0, eps=1e-5)
+    # U = u*para.NFstar
+
+    function _u(fs)
+        p_l = UEG.ParaMC(rs=para.rs, beta=para.beta, Fs=fs, Fa=0.0, order=1, mass2=para.mass2, isDynamic=true, isFock=false)
+        wp, wm, angle = Ver4.exchange_interaction(p_l, kamp, kamp2; ct=false, verbose=verbose)
+        return Ver4.Legrendre(0, wp, angle) + fs + 4π / para.me * a_s
+    end
+
+    function _u_f(fs)
+        p_l = UEG.ParaMC(rs=para.rs, beta=para.beta, Fs=fs, Fa=0.0, order=1, mass2=para.mass2, isDynamic=true, isFock=false)
+        wp, wm, angle = Ver4.exchange_interaction_df(p_l, kamp, kamp2; ct=false, verbose=verbose)
+        return Ver4.Legrendre(0, wp, angle) + 1.0
+    end
+
+    function newton(fs)
+        iter = 1
+        err = eps * 10
+        while err > eps && iter < N
+            if verbose > 1
+                println("$fs ->", fs - _u(fs) / _u_f(fs), " with ", _u(fs), ", ", _u_f(fs))
+            end
+            fx = _u(fs)
+            fs_new = fs - fx / _u_f(fs)
+            # err = abs(fs - fs_new)
+            fs = fs_new
+            err = abs(fx)
+            iter += 1
+            if iter >= N 
+                @warn("Newton-Raphson method doesn't converge. error = $err, got $fs")
+            end
+        end
+        return fs
+    end
+
+    function bisection(fs0, fs1)
+        iter = 1
+        err = eps*10
+        fs_t = fs1
+        while err > eps && iter < N
+            fx0 = _u(fs0)
+            fx1 = _u(fs1)
+            # println(fx0," ", fx1)
+            # @assert fx0*fx1<=0 "The function value of two inputs must have opposite signs."
+            while fx0*fx1>0
+                # println(fx0," ", fx1)
+                fs0 = fs0 - 0.0001
+                fx0 = _u(fs0)
+            end
+            fs_t = (fs0+fs1)/2
+            fx_t = _u(fs_t)
+            err = abs(fx_t)
+            if fx_t*fx1 < 0
+                fs0 = fs_t
+            else
+                fs1 = fs_t
+            end
+            iter = iter + 1 
+        end
+        return fs_t
+    end
+    _Fs = bisection(-(1-1e-12)-0.2*para.rs,0.01)
+    return _Fs
+end
+
+function treelevel_RG(para, Λgrid, asgrid)
+    Fs = []
+    for (idx, a_s) in enumerate(asgrid)
+        # println("U=$(-4π*a_s/para.me)")
+        lambda = Λgrid[idx]
+        Fs_temp = derive_f(para, lambda, lambda; a_s = a_s, verbose=0)
+        # println("Fs_temp=$Fs_temp")
+        push!(Fs,Fs_temp)
+    end
+    Fs = convert(Vector{Float64}, Fs)
+    return Fs
+end
+
+
 @inline function linear2D(data, xgrid, ygrid, x, y)
 
     xarray, yarray = xgrid.grid, ygrid.grid
