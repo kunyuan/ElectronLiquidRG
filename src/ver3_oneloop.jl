@@ -250,7 +250,7 @@ function bLambda_MCMC(para::ParaMC;
         # println("ver3=$(ver3)")
         # println("filename=$(filename)")
         if isnothing(filename) == false
-            jldopen(filename, "a+") do f
+            jldopen(filename, "w") do f
                 key = "$(UEG.short(para))"
                 if haskey(f, key)
                     @warn("replacing existing data for $key")
