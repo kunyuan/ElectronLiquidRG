@@ -110,7 +110,7 @@ function derive_f(para::ParaMC, kamp=para.kF, kamp2=para.kF; a_s=0.0, N=400, mix
     function _u(fs)
         p_l = UEG.ParaMC(rs=para.rs, beta=para.beta, Fs=fs, Fa=0.0, order=1, mass2=para.mass2, isDynamic=true, isFock=false)
         wp, wm, angle = Ver4.exchange_interaction(p_l, kamp, kamp2; ct=false, verbose=verbose)
-        return Ver4.Legrendre(0, wp, angle) + fs + 4π / para.me * a_s
+        return Ver4.Legrendre(0, wp, angle) + fs - 4π / para.me * a_s
     end
 
     function _u_f(fs)

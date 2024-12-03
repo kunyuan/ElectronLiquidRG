@@ -240,13 +240,15 @@ function bLambda_MCMC(para::ParaMC;
     end
 
     result = integrate(integrand; measure=_measure_ver3, config=config, solver=:mcmc, neval=neval, kwargs...)
+    
     if isnothing(result) == false
         avg, std = result.mean[1], result.stdev[1]
         r = measurement.(real(avg), real(std))
         i = measurement.(imag(avg), imag(std))
         # ver3 = Complex.(r, i)
         ver3 = r
-
+        # println("ver3=$(ver3)")
+        # println("filename=$(filename)")
         if isnothing(filename) == false
             jldopen(filename, "a+") do f
                 key = "$(UEG.short(para))"
@@ -259,6 +261,8 @@ function bLambda_MCMC(para::ParaMC;
         end
 
         return ver3, result
+    else
+        return nothing, nothing
     end
 end
 

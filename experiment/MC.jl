@@ -1,7 +1,7 @@
 using ElectronLiquidRG
 using ElectronLiquid
 
-neval = 1e9
+neval = 1e6
 
 dim = 3
 rs = [5.0,]
@@ -27,7 +27,7 @@ for (_rs, _mass2, _beta, _order) in Iterators.product(rs, mass2, beta, order)
         # Λgrid = [para.kF,]
 
         println("Sigma on $(UEG.short(para))")
-        ElectronLiquidRG.sigma(para, Λgrid=Λgrid, neval=neval, filename="data/sigma.jld2")
+        ElectronLiquidRG.sigma(para, Λgrid=Λgrid, neval=neval, filename="sigma.jld2")
 
         para = UEG.ParaMC(rs=_rs, beta=_beta, Fs=_F, order=_order+1, mass2=_mass2, isDynamic=isDynamic, dim=dim, isFock=isFock)
 
@@ -43,7 +43,7 @@ for (_rs, _mass2, _beta, _order) in Iterators.product(rs, mass2, beta, order)
         println("PHE ver3 on $(UEG.short(para))")
         ElectronLiquidRG.vertex3(para, kamp=Λgrid, neval=neval, integrand=ElectronLiquidRG._Lver3, filename="data/ver3_PHE.jld2")
 
-        # println("PH ver3 on $(UEG.short(para))")
-        # ElectronLiquidRG.vertex3(para, kamp=Λgrid, neval=neval, integrand=ElectronLiquidRG._Lbubble, filename="data/ver3_PH.jld2")
+        println("PH ver3 on $(UEG.short(para))")
+        ElectronLiquidRG.vertex3(para, kamp=Λgrid, neval=neval, integrand=ElectronLiquidRG._Lbubble, filename="data/ver3_PH.jld2")
     end
 end
