@@ -11,28 +11,6 @@ function aLambda_avg(para; kamp=[para.kF,], kamp2=kamp, n=[0, 0, 0, 0], theta=[0
     return ver4, result
 end
 
-# function aLambda_else(para, kΛ)
-#     θgrid = CompositeGrid.LogDensedGrid(:gauss, [0.0, π], [0.0, π], 16, 0.001, 16)
-#     qs = [kΛ * sqrt(2*(1 - cos(θ))) for θ in θgrid.grid]
-#     Wp = zeros(Float64, length(qs))
-#     for (qi, q) in enumerate(qs)
-#         Wp[qi] = UEG.polarKW(q, 0, para)
-#     end
-#     avgPi = Ver4.Legrendre(0, Wp, θgrid) 
-#     # for (qi, q) in enumerate(qs)
-#     #     Wp[qi] = KO_static(q, para; ct=true, Coul = Coul)
-#     # end
-#     # avgR = Ver4.Legrendre(0, Wp, θgrid)
-#     f1 = para.fs
-#     # println("fs=$f1")
-#     # println("R=$(-f1),Pi=$avgPi\n")
-#     # println("$(-2.0*f1*para.NFstar)\t $(-f1^2 * avgPi*para.NF)")
-#     println("$(f1), $(avgPi), $(para.NF)")
-#     return -(f1^2 * avgPi) *para.NF
-# end
-
-
-
 # function dcLambdas_avg(para; kΛ, a_s, theta=[0,], neval=1e6)
 #     function integrand_c(idx, vars, config)
 #         K, N, T, Ang, ExtKidx = vars
@@ -129,7 +107,7 @@ function c_coeff_pp(para, kamp=para.kF, kamp2=para.kF)
 end
 
 
-function cLambda_Pi(para; kΛ, a_s)
+function cLambda_Pi(para; kΛ)
     
     θgrid = CompositeGrid.LogDensedGrid(:gauss, [0.0, π], [0.0, π], 32, 0.001, 32)
     qs = [kΛ * sqrt(2.0*(1 - cos(θ))) for θ in θgrid.grid]
@@ -139,7 +117,7 @@ function cLambda_Pi(para; kΛ, a_s)
     end
     # println(Wp)
     avgPiu = Ver4.Legrendre(0, Wp, θgrid) 
-    println("Piu=$(avgPiu)")
+    # println("Piu=$(avgPiu)")
 
     # θgrid = CompositeGrid.LogDensedGrid(:gauss, [0.0, π], [0.0, π], 32, 0.001, 32)
     # φgrid = CompositeGrid.LogDensedGrid(:gauss, [0.0, 2π], [0.0, 2π], 32, 0.001, 32)
@@ -163,7 +141,6 @@ function cLambda_Pi(para; kΛ, a_s)
     # println("Piu=$(avgPiu)")
    
     avgPiu = avgPiu/para.NF
-    # println("uΛ=$(uΛ*para.NF)\t$(f1*avgPi*uΛ *para.NF)\n")
     return avgPiu
 end
 
@@ -273,4 +250,67 @@ function aLambda_PH_avg(para::ParaMC;
 
         return ver4, result
     end
+end
+
+function aLambda_thetaphi_avg(para; kamp=[para.kF,], kamp2=kamp, n=[0, 0, 0, 0], theta=[0,], phi=[0,],
+    neval=1e6, filename::Union{String,Nothing}=nothing, reweight_goal=nothing,
+    filter=[NoHartree],    # filter=[NoHartree, NoBubble, Proper],
+    channels=[PHr, PHEr, PPr, Alli],
+    partition=UEG.partition(para.order),
+    transferLoop=nothing, extK=nothing, optimize_level=1,
+    verbose=0
+)
+    # data = Ver4.MC_Spec_Jl(para; kamp=kamp, kamp2=kamp2, theta=theta, phi=phi, n=n, neval=neval, filter=filter, channels=channels, transferLoop=transferLoop)
+    ver4, result = Ver4.MC_Spec_Jl(para; kamp=kamp, kamp2=kamp2, theta=theta, phi=phi, n=n, neval=neval,filter=filter, channels=channels, transferLoop=transferLoop, verbose=-1)
+    partition = [(1, 0, 0)]
+    if isnothing(ver4) == false && verbose != -1
+        # for (p, data) in ver4
+        datadict = Dict{eltype(partition),Any}()
+        thetagrid = CompositeGrids.SimpleG.Arbitrary(theta)
+        phigrid = CompositeGrids.SimpleG.Arbitrary(phi)
+        for p in partition
+            data = ver4[p]
+            data_aΛ = []
+            Nθ = length(theta)
+            Nφ = length(phi)
+            for (ki, k) in enumerate(kamp)
+                avg = [0.0, 0.0]
+                avga_theta = zeros(Float64, Nθ)
+                avge_theta = zeros(Float64, Nθ)
+                for (ti, _theta) in enumerate(theta)
+                    if Nφ == 1
+                        d2 = real(data[2, ti, 1, ki])
+                        avga_theta[ti] = d2.val * sin(_theta)
+                        avge_theta[ti] = d2.err * sin(_theta)
+                    else
+                        da_phi = zeros(Float64, Nφ)
+                        de_phi = zeros(Float64, Nφ)
+                        for (pidx, _phi) in enumerate(phi)
+                            d2 = real(data[2, ti, pidx, ki])
+                            da_phi[pidx] = d2.val
+                            de_phi[pidx] = d2.err
+                        end
+                        avga_theta[ti] = Interp.integrate1D(da_phi, phigrid) * sin(_theta) / π
+                        avge_theta[ti] = Interp.integrate1D(de_phi, phigrid) * sin(_theta) / π
+                    end
+                end
+                avg[1] = Interp.integrate1D(avga_theta, thetagrid) / 2.0
+                avg[2] = Interp.integrate1D(avge_theta, thetagrid) / 2.0
+                push!(data_aΛ, measurement.(avg[1], avg[2]))
+            end
+            datadict[p] = data_aΛ
+        end
+
+        if isnothing(filename) == false
+            jldopen(filename, "a+") do f
+                key = "$(UEG.short(para))"
+                if haskey(f, key)
+                    @warn("replacing existing data for $key")
+                    delete!(f, key)
+                end
+                f[key] = (kamp, n, datadict)
+            end
+        end
+    end
+    return ver4, result
 end
