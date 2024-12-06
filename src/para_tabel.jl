@@ -165,7 +165,7 @@ function derive_f(para::ParaMC, kamp=para.kF, kamp2=para.kF; a_s=0.0, N=400, mix
         end
         return fs_t
     end
-    _Fs = bisection(-(1-1e-12)-0.2*para.rs,0.01)
+    _Fs = bisection(-(1-1e-12)-0.2*para.rs,0.5)
     return _Fs
 end
 

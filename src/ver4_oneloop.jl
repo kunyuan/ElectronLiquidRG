@@ -297,6 +297,7 @@ function aLambda_thetaphi_avg(para; kamp=[para.kF,], kamp2=kamp, n=[0, 0, 0, 0],
                 avg[1] = Interp.integrate1D(avga_theta, thetagrid) / 2.0
                 avg[2] = Interp.integrate1D(avge_theta, thetagrid) / 2.0
                 push!(data_aΛ, measurement.(avg[1], avg[2]))
+                println("k=$(k/para.kF)kF, aLambda=$(measurement.(avg[1], avg[2]))")
             end
             datadict[p] = data_aΛ
         end
