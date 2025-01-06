@@ -18,7 +18,8 @@ host.txt
 *.png
 *.jpg
 try/
-RG/
+RG/*.csv
+RG/*.jld2
 __pycache__
 .ipynb_checkpoints
 */.ipynb_checkpoints/*
