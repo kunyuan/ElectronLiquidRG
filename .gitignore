@@ -23,6 +23,7 @@ RG/*.jld2
 RG/*/*.csv
 RG/*/*.jld2
 RG/*/*.pdf
+RG/*/*.jl
 
 __pycache__
 .ipynb_checkpoints
