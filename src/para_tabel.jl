@@ -165,7 +165,67 @@ function derive_f(para::ParaMC, kamp=para.kF, kamp2=para.kF; a_s=0.0, N=400, mix
         end
         return fs_t
     end
-    _Fs = bisection(-(1-1e-12)-0.2*para.rs,0.5)
+    _Fs = bisection(-(1-1e-12)-0.2*para.rs,0.1)
+    return _Fs
+end
+
+function derive_f_thetaphi(para::ParaMC, kamp=para.kF, kamp2=para.kF; a_s=0.0, N=400, mix=0.8, verbose=0, eps=1e-5)
+    # U = u*para.NFstar
+
+    function _u(fs)
+        p_l = UEG.ParaMC(rs=para.rs, beta=para.beta, Fs=fs, Fa=0.0, order=1, mass2=para.mass2, isDynamic=true, isFock=false)
+        θgrid = ElectronLiquidRG.CompositeGrid.LogDensedGrid(:gauss, [0.0, π], [0.0, π], 16, 0.001, 32)
+        φgrid = SimpleG.Uniform([0.0, π],100)
+        avgRex_theta = zeros(Float64, length(θgrid))
+        avgRex_phi = zeros(Float64, length(φgrid))
+        for (idx, _theta) in enumerate(θgrid)
+            for (jdx, _phi) in enumerate(φgrid)
+                extK1 = [sin(0.5_theta), cos(0.5_theta), 0] * kamp
+                extK2 = [-sin(0.5_theta), cos(0.5_theta), 0] * kamp
+                extK3 = [sin(0.5_theta)*cos(_phi),cos(0.5_theta),sin(0.5_theta)*sin(_phi)] * kamp
+    
+                qabs = sqrt(dot(extK2-extK3, extK2-extK3))
+                avgRex_phi[jdx] = UEG.KOstatic(qabs, p_l; ct=false)
+                
+                
+            end
+            avgRex_theta[idx] = Interp.integrate1D(avgRex_phi, φgrid) / (π)
+        end
+        avgRex = Ver4.Legrendre(0, avgRex_theta, θgrid) *para.NFstar
+
+        return avgRex + fs - 4π / para.me * a_s
+        # return Ver4.Legrendre(0, wp, angle) + fs + 4π / para.me * a_s
+    end
+    function bisection(fs0, fs1)
+        iter = 1
+        err = eps*10
+        fs_t = fs1
+        while err > eps && iter < N
+            fx0 = _u(fs0)
+            fx1 = _u(fs1)
+            # println(fx0," ", fx1)
+            # @assert fx0*fx1<=0 "The function value of two inputs must have opposite signs."
+            while fx0*fx1>0
+                # println(fx0," ", fx1)
+                fs0 = fs0 - 0.0001
+                fx0 = _u(fs0)
+            end
+            fs_t = (fs0+fs1)/2
+            fx_t = _u(fs_t)
+            err = abs(fx_t)
+            if fx_t*fx1 < 0
+                fs0 = fs_t
+            else
+                fs1 = fs_t
+            end
+            iter = iter + 1 
+        end
+        return fs_t
+    end
+    _Fs = bisection(-(1-1e-12)-0.4*para.rs,0.1)
+    if _Fs<-(1-1e-12)-0.4*para.rs || _Fs>0.1
+        println("error")
+    end
     return _Fs
 end
 
@@ -174,7 +234,15 @@ function treelevel_RG(para, Λgrid, asgrid)
     for (idx, a_s) in enumerate(asgrid)
         # println("U=$(-4π*a_s/para.me)")
         lambda = Λgrid[idx]
+        # old version
         Fs_temp = derive_f(para, lambda, lambda; a_s = a_s, verbose=0)
+
+        # Fs_temp = derive_f_thetaphi(para, lambda, lambda; a_s = a_s, verbose=0)
+        
+        # new version 
+        # Fs_temp = derive_f(para, para.kF, para.kF; a_s = a_s, verbose=0)
+        
+
         # println("Fs_temp=$Fs_temp")
         push!(Fs,Fs_temp)
     end
@@ -182,6 +250,43 @@ function treelevel_RG(para, Λgrid, asgrid)
     return Fs
 end
 
+
+function treelevel_RG_iter(para, FsΛ, Λgrid, asgrid; mix=0.95)
+    Fs_derive = zeros(Float64, length(FsΛ))
+    for (idx, a_s) in enumerate(asgrid)
+        F = FsΛ[idx]
+        kamp = Λgrid[idx]
+        p_l = UEG.ParaMC(rs=para.rs, beta=para.beta, Fs=F, Fa=0.0, order=1, mass2=para.mass2, isDynamic=true, isFock=false)
+        # wp, wm, angle = Ver4.exchange_interaction(p_l, para.kF, para.kF; ct=false, verbose=0)
+        wp, wm, angle = Ver4.exchange_interaction(p_l, kamp, kamp; ct=false, verbose=0)
+
+        # θgrid = ElectronLiquidRG.CompositeGrid.LogDensedGrid(:gauss, [0.0, π], [0.0, π], 16, 0.001, 32)
+        # φgrid = SimpleG.Uniform([0.0, π],100)
+        # avgRex_theta = zeros(Float64, length(θgrid))
+        # avgRex_phi = zeros(Float64, length(φgrid))
+        # for (idx, _theta) in enumerate(θgrid)
+        #     for (jdx, _phi) in enumerate(φgrid)
+        #         extK1 = [sin(0.5_theta), cos(0.5_theta), 0] * kamp
+        #         extK2 = [-sin(0.5_theta), cos(0.5_theta), 0] * kamp
+        #         extK3 = [sin(0.5_theta)*cos(_phi),cos(0.5_theta),sin(0.5_theta)*sin(_phi)] * kamp
+    
+        #         qabs = sqrt(dot(extK2-extK3, extK2-extK3))
+        #         avgRex_phi[jdx] = UEG.KOstatic(qabs, p_l; ct=false)
+                
+                
+        #     end
+        #     avgRex_theta[idx] = Interp.integrate1D(avgRex_phi, φgrid) / (π)
+        # end
+        # avgRex = Ver4.Legrendre(0, avgRex_theta, θgrid) *para.NFstar
+        
+
+        Fs_derive[idx] = - Ver4.Legrendre(0, wp, angle) + 4π / para.me * a_s
+        # Fs_derive[idx] = -avgRex + 4π / para.me * a_s
+    end
+    # println(Fs_derive)
+    Fs_derive = mix * FsΛ + (1.0 - mix) *Fs_derive
+    return return Fs_derive
+end
 
 @inline function linear2D(data, xgrid, ygrid, x, y)
 
