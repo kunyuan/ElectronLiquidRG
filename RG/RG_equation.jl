@@ -14,7 +14,7 @@ using CurveFit
 using SpecialFunctions
 
 dim = 3
-rs = [5.0,]
+rs = [2.0,]
 mass2 = [1e-2,]
 beta = [40.0]
 order = [1,]
@@ -34,17 +34,29 @@ function getdata(filename)
     return data
 end
 
-function data_fit_F(data, Fs, n_fit)
+function data_fit_F_piecewise(data, Fs, cutoff, n_fit)
     coeff_poly = []
+    Fs_1 = Fs[1:cutoff]
+    Fs_2 = Fs[cutoff:end]
     for idx in eachindex(data)
-        a_poly = poly_fit(Fs, data[idx], n_fit)
+        data_F = data[idx]
+        data_F_1 = data_F[1:cutoff]
+        data_F_2 = data_F[cutoff:end]
+        a_poly = []
+        push!(a_poly, poly_fit(Fs_1, data_F_1, n_fit))
+        push!(a_poly, poly_fit(Fs_2, data_F_2, n_fit))
         push!(coeff_poly, a_poly)
     end
     return coeff_poly
 end
 
-function getdata_fit(coeff, idx, F, n_fit)
-    a_poly = coeff[idx]
+function getdata_fit_piecewise(coeff, idx, F, Fs, cutoff, n_fit)
+    # println(coeff[idx])
+    if F < Fs[cutoff]
+        a_poly = coeff[idx][1]
+    else
+        a_poly = coeff[idx][2]
+    end
     data = 0.0
     for jdx = 1:n_fit+1
         data += a_poly[jdx] * F^(jdx - 1)
@@ -70,57 +82,6 @@ function derivative_fit(x, y, xgrid, n_fit)
         dy_fit[jdx] = data / kΛ^2 - 2.0*y_fit[jdx] / kΛ
     end
     return dy_fit
-end
-
-function derive_counterterm_R_v2(para, kamp, dz, bLambda_bubble, avgRPi)
-    ct = true
-    θgrid = ElectronLiquidRG.CompositeGrid.LogDensedGrid(:gauss, [0.0, π], [0.0, π], 16, 0.001, 32)
-    φgrid = SimpleG.Uniform([0.1π, π],100)
-    avgR_theta = zeros(Float64, length(θgrid))
-    avgR_phi = zeros(Float64, length(φgrid))
-    avgPi_theta = zeros(Float64, length(θgrid))
-    avgPi_phi = zeros(Float64, length(φgrid))
-    # avgRPi_theta = zeros(Float64, length(θgrid))
-    # avgRPi_phi = zeros(Float64, length(φgrid))
-    for (idx, _theta) in enumerate(θgrid)
-        for (jdx, _phi) in enumerate(φgrid)
-            extK1 = [sin(0.5_theta), cos(0.5_theta), 0] * kamp
-            extK2 = [-sin(0.5_theta), cos(0.5_theta), 0] * kamp
-            extK3 = [sin(0.5_theta)*cos(_phi),cos(0.5_theta),sin(0.5_theta)*sin(_phi)] * kamp
-            # qabs = sqrt(dot(extK1-extK2, extK1-extK2))
-            qabs = sqrt(dot(extK1-extK3, extK1-extK3))
-            avgR_phi[jdx] = UEG.KOstatic(qabs, para; ct=ct)
-            avgPi_phi[jdx] = UEG.polarKW(qabs, 0, para)
-            # avgRPi_phi[jdx] = avgR_phi[jdx]*avgPi_phi[jdx]
-            
-        end
-        avgR_theta[idx] = Interp.integrate1D(avgR_phi, φgrid) / (π)
-        avgPi_theta[idx] = Interp.integrate1D(avgPi_phi, φgrid) / (π)
-        # avgRPi_theta[idx] = Interp.integrate1D(avgRPi_phi, φgrid) / (π)
-    end
-    avgPi = Ver4.Legrendre(0, avgPi_theta, θgrid)
-    avgR = Ver4.Legrendre(0, avgR_theta, θgrid)
-    # avgRPi = Ver4.Legrendre(0, avgRPi_theta, θgrid)
-    # println("avgRPi=$(avgRPi), bLambda_bubble=$(bLambda_bubble)")
-    # avgRPi = avgRPi_static(para, kamp)
-
-
-    # qs = [kamp * sqrt(2*(1 - cos(θ))) for θ in θgrid.grid]
-    # Wp = zeros(Float64, length(qs))
-    # for (qi, q) in enumerate(qs)
-    #     Wp[qi] =UEG.KOstatic(q, para; ct=ct)
-    # end
-    # avgR_ex = Ver4.Legrendre(0, Wp, θgrid)
-    
-    f1 = para.fs
-    # δR = 2.0*dz*avgR - 2*f1*avgRPi - f1^2*avgPi
-    δR = 2.0*dz*avgR - 2*f1*2.0*bLambda_bubble - f1^2*avgPi
-
-    # if kamp/para.kF>7.94
-    #     println("k=$(kamp/para.kF)kF, avgRPi=$(avgRPi), $(2.0*dz*avgR*para.NF), $(- 2*f1*avgRPi*para.NF), $(- f1^2*avgPi*para.NF)")
-    # end
-    δR = δR*para.NF
-    return δR
 end
 
 function derive_counterterm_R(para, kamp, dz, bLambda_bubble)
@@ -153,7 +114,6 @@ function derive_counterterm_R(para, kamp, dz, bLambda_bubble)
     avgR = Ver4.Legrendre(0, avgR_theta, θgrid)
     # avgRPi = Ver4.Legrendre(0, avgRPi_theta, θgrid)
     # println("avgRPi=$(avgRPi), bLambda_bubble=$(bLambda_bubble)")
-    # avgRPi = avgRPi_static(para, kamp)
 
 
     # qs = [kamp * sqrt(2*(1 - cos(θ))) for θ in θgrid.grid]
@@ -178,16 +138,13 @@ function derive_z1Λ(para,
     Λgrid,
     Fs,
     coeff_z1,
+    Fs_grid,
+    cutoff_F,
     n_fit
 )
     z1Λ = zeros(Float64, length(Λgrid))
     for (idx, F) in enumerate(Fs)
-        data = getdata_fit(coeff_z1, idx, F, n_fit)
-        # a_poly = coeff_z1[idx]
-        # data = 0.0
-        # for jdx = 1:n_fit + 1
-        #     data += a_poly[jdx] * F^(jdx-1)
-        # end
+        data = getdata_fit_piecewise(coeff_z1, idx, F, Fs_grid, cutoff_F, n_fit)
         z1Λ[idx] = data
     end
     return z1Λ
@@ -200,6 +157,8 @@ function derive_bLambda(para,
     coeff_bΛ_Lver3_direct,
     coeff_bΛ_Lver3_exchange,
     coeff_bΛ_Lver3_bubble,
+    Fs_grid,
+    cutoff_F,
     n_fit
 )
     function b_tail(para, k)
@@ -208,47 +167,16 @@ function derive_bLambda(para,
     end
     bΛ = zeros(Float64, length(Λgrid))
     for (idx, F) in enumerate(Fs)
-        data = getdata_fit(coeff_bΛ_PP, idx, F, n_fit)
-        # a_poly = coeff_bΛ_PP[idx]
-        # data = 0.0
-        # for jdx = 1:n_fit + 1
-        #     data += a_poly[jdx] * F^(jdx-1)
-        # end
+        data = getdata_fit_piecewise(coeff_bΛ_PP, idx, F, Fs_grid, cutoff_F, n_fit)
         bΛ[idx] += 2.0*data
         
-        data = getdata_fit(coeff_bΛ_Lver3_direct, idx, F, n_fit)
-        # a_poly = coeff_bΛ_Lver3_direct[idx]
-        # data = 0.0
-        # for jdx = 1:n_fit + 1
-        #     data += a_poly[jdx] * F^(jdx-1)
-        # end
+        data = getdata_fit_piecewise(coeff_bΛ_Lver3_direct, idx, F, Fs_grid, cutoff_F, n_fit)
         bΛ[idx] += 2.0*data
 
-        data = getdata_fit(coeff_bΛ_Lver3_exchange, idx, F, n_fit)
-        # a_poly = coeff_bΛ_Lver3_exchange[idx]
-        # data = 0.0
-        # for jdx = 1:n_fit + 1
-        #     data += a_poly[jdx] * F^(jdx-1)
-        # end
+        data = getdata_fit_piecewise(coeff_bΛ_Lver3_exchange, idx, F, Fs_grid, cutoff_F, n_fit)
         bΛ[idx] += 2.0*data
 
-        data = getdata_fit(coeff_bΛ_Lver3_bubble, idx, F, n_fit)
-        # a_poly = coeff_bΛ_Lver3_bubble[idx]
-        # data = 0.0
-        # for jdx = 1:n_fit + 1
-        #     data += a_poly[jdx] * F^(jdx-1)
-        # end
-
-        # a_poly = coeff_avgRPi_static[idx]
-        # data = 0.0
-        # for jdx = 1:n_fit + 1
-        #     data += a_poly[jdx] * F^(jdx-1)
-        # end
-        # data = 0.5*data
-
-        # para0 = ElectronLiquidRG.get_para(para, F)
-        # data = avgRPi_static(para0, Λgrid[idx])
-        # data = 0.5*data
+        data = getdata_fit_piecewise(coeff_bΛ_Lver3_bubble, idx, F, Fs_grid, cutoff_F, n_fit)
         bΛ[idx] = bΛ[idx] - 2.0*data
         # println("Lb=$(data)")
         # if idx == length(Λgrid)
@@ -267,29 +195,22 @@ function derive_aLambda(para,
     coeff_aΛ_PH,
     coeff_z1,
     coeff_bΛ_Lver3_bubble,
+    Fs_grid,
+    cutoff_F,
     n_fit
 ) 
     # println(Fsgrid)
     aΛ = zeros(Float64, length(Λgrid))
     for (idx, F) in enumerate(Fs)
         # PP+PHE channel
-        
-        a_poly = coeff_aΛ_PP_PHE[idx]
-        data = 0.0
-        for jdx = 1:n_fit + 1
-            data += a_poly[jdx] * F^(jdx-1)
-        end
+        data = getdata_fit_piecewise(coeff_aΛ_PP_PHE, idx, F, Fs_grid, cutoff_F, n_fit)
         aΛ[idx] += data
         # if idx == 1
         # println("k=$(Λgrid[idx]/para.kF)")
         # println("PP+PHE=$(data)")
         # end
         # PH channel
-        a_poly = coeff_aΛ_PH[idx]
-        data = 0.0
-        for jdx = 1:n_fit + 1
-            data += a_poly[jdx] * F^(jdx-1)
-        end
+        data = getdata_fit_piecewise(coeff_aΛ_PH, idx, F, Fs_grid, cutoff_F, n_fit)
         aΛ[idx] += data
         # println(data_aΛ_PH[idx])
         # println("Fs=$(F)")
@@ -301,29 +222,13 @@ function derive_aLambda(para,
         para0 = ElectronLiquidRG.get_para(para, F)
         kΛ = Λgrid[idx]
         
-        a_poly = coeff_z1[idx]
-        data = 0.0
-        for jdx = 1:n_fit + 1
-            data += a_poly[jdx] * F^(jdx-1)
-        end
+        data = getdata_fit_piecewise(coeff_z1, idx, F, Fs_grid, cutoff_F, n_fit)
         dz = data
 
-        a_poly = coeff_bΛ_Lver3_bubble[idx]
-        data = 0.0
-        for jdx = 1:n_fit + 1
-            data += a_poly[jdx] * F^(jdx-1)
-        end
+        data = getdata_fit_piecewise(coeff_bΛ_Lver3_bubble, idx, F, Fs_grid, cutoff_F, n_fit)
         bLambda_bubble = data
 
-        # a_poly = coeff_avgRPi_static[idx]
-        # data = 0.0
-        # for jdx = 1:n_fit + 1
-        #     data += a_poly[jdx] * F^(jdx-1)
-        # end
-        # avgRPi = data
-
         δR = derive_counterterm_R(para0, kΛ, dz, bLambda_bubble)
-        # δR = derive_counterterm_R_v2(para0, kΛ, dz, bLambda_bubble, avgRPi)
         aΛ[idx] = aΛ[idx] - δR
     end
     return aΛ
@@ -612,7 +517,7 @@ function derive_equ_u_v3(para, Λgrid, aΛ, bΛ, dcΛs, dcΛu, z1Λ, uΛ, n_fit_
     return dbΛ, dz1Λ, uΛ_derive_1, uΛ_derive_2, uΛ_derive
 end 
 
-function derive_f_Gamma3(para, Λgrid, Fs, uΛ, coeff_Lver3_direct, coeff_z1, n_fit; mix=0.8)
+function derive_f_Gamma3(para, Λgrid, Fs, uΛ, coeff_Lver3_direct, coeff_z1, Fs_grid, cutoff_F, n_fit; mix=0.8)
     Fs_derive = zeros(Float64, length(Fs))
     for (idx, F) in enumerate(Fs)
         para0 = ElectronLiquidRG.get_para(para, F)
@@ -642,11 +547,9 @@ function derive_f_Gamma3(para, Λgrid, Fs, uΛ, coeff_Lver3_direct, coeff_z1, n_
         avgPi = Ver4.Legrendre(0, avgPi_theta, θgrid)
         avgRPi = Ver4.Legrendre(0, avgRPi_theta, θgrid)
 
-        bLambda_Lver3d = - getdata_fit(coeff_Lver3_direct, idx, F, n_fit)
-        # bLambda_Lver3d = - getdata_fit(coeff_Lver3_direct, 1, F, n_fit)
-        z1 = getdata_fit(coeff_z1, idx, F, n_fit)
+        bLambda_Lver3d = - getdata_fit_piecewise(coeff_Lver3_direct, idx, F, Fs_grid, cutoff_F, n_fit)
+        z1 = getdata_fit_piecewise(coeff_z1, idx, F, Fs_grid, cutoff_F, n_fit)
 
-        # Fs_derive[idx] = - (bLambda_Lver3d + z1 + 0.5*uΛ[idx] * avgPi / para.NFstar + avgRPi) / (avgPi / para.NFstar)
         Fs_derive[idx] =  (bLambda_Lver3d + z1 + 0.5*uΛ[idx] * avgPi / para.NFstar ) / (avgPi / para.NFstar)
     end
     # println(Fs_derive)
@@ -676,6 +579,7 @@ for (_rs, _mass2, _beta, _order) in Iterators.product(rs, mass2, beta, order)
         Fs = SimpleG.Uniform([-0.99, 0.0], 100)
         Fs1 = SimpleG.Uniform([-1.5, -1.01], 50).grid
         Fs = cat(Fs1, Fs; dims=1)
+        cutoff_F = 60
     elseif _rs == 2.0
         Fs = SimpleG.Uniform([-0.99, 0.0], 100)
         Fs1 = SimpleG.Uniform([-1.5, -1.01], 50).grid
@@ -685,10 +589,12 @@ for (_rs, _mass2, _beta, _order) in Iterators.product(rs, mass2, beta, order)
         Fs = SimpleG.Uniform([-0.99, 0.0], 100)
         Fs1 = SimpleG.Uniform([-1.6, -1.01], 60).grid
         Fs = cat(Fs1, Fs; dims=1)
+        cutoff_F = 80
     elseif _rs == 5.0
         Fs = SimpleG.Uniform([-0.99, 0.0], 100).grid
         Fs1 = SimpleG.Uniform([-2.4, -1.01], 140).grid
         Fs = cat(Fs1, Fs; dims=1)
+        cutoff_F = 100
     end
 
     # zfactor 
@@ -715,14 +621,13 @@ for (_rs, _mass2, _beta, _order) in Iterators.product(rs, mass2, beta, order)
     
     # fit
     n_fit_F = 4
-    coeff_z1 = data_fit_F(data_z1, Fs, n_fit_F)
-    coeff_aΛ_PP_PHE = data_fit_F(data_aΛ_PP_PHE, Fs, n_fit_F)
-    coeff_aΛ_PH = data_fit_F(data_aΛ_PH, Fs, n_fit_F)
-    coeff_bΛ_PP = data_fit_F(data_bΛ_PP, Fs, n_fit_F)
-    coeff_bΛ_Lver3_direct = data_fit_F(data_bΛ_Lver3_direct, Fs, n_fit_F)
-    coeff_bΛ_Lver3_exchange = data_fit_F(data_bΛ_Lver3_exchange, Fs, n_fit_F)
-    coeff_bΛ_Lver3_bubble = data_fit_F(data_bΛ_Lver3_bubble, Fs, n_fit_F)
-    # coeff_avgRPi_static = data_fit_F(data_avgRPi, Fs, n_fit_F)
+    coeff_z1 = data_fit_F_piecewise(data_z1, Fs, cutoff_F, n_fit_F)
+    coeff_aΛ_PP_PHE = data_fit_F_piecewise(data_aΛ_PP_PHE, Fs, cutoff_F, n_fit_F)
+    coeff_aΛ_PH = data_fit_F_piecewise(data_aΛ_PH, Fs, cutoff_F, n_fit_F)
+    coeff_bΛ_PP = data_fit_F_piecewise(data_bΛ_PP, Fs, cutoff_F, n_fit_F)
+    coeff_bΛ_Lver3_direct = data_fit_F_piecewise(data_bΛ_Lver3_direct, Fs, cutoff_F, n_fit_F)
+    coeff_bΛ_Lver3_exchange = data_fit_F_piecewise(data_bΛ_Lver3_exchange, Fs, cutoff_F, n_fit_F)
+    coeff_bΛ_Lver3_bubble = data_fit_F_piecewise(data_bΛ_Lver3_bubble, Fs, cutoff_F, n_fit_F)
 
 
     filename_dcLambda = "data_csv/dcLambda_rs=$(_rs)_mass2=$(_mass2)_beta=$(_beta).csv"
@@ -758,22 +663,22 @@ for (_rs, _mass2, _beta, _order) in Iterators.product(rs, mass2, beta, order)
     B = _para.me * (_para.e0)^2 * (π - 2.0)
     # println("B=$(B/kF)kF")
 
-    ac = [-1.4, -1.6,-1.8,-2.0,-2.2]
+    ac = [0.0]
     label_ac = 1
     a_c = ac[label_ac]
     # Λgrid_measurement_Large_Large = SimpleG.Log{Float64}([Λgrid_measurement_Large[end] , 10000.0*kF], 101, 0.5*kF, true).grid
     # uΛ_Large_Large = derive_equ_u_Large_analytic(_para, Λgrid_measurement_Large_Large/kF, B, a_c)
-    uΛ_Large_Large = derive_equ_u_Large_analytic(_para, Λgrid_measurement_Large/kF, B, a_c)
+    # uΛ_Large_Large = derive_equ_u_Large_analytic(_para, Λgrid_measurement_Large/kF, B, a_c)
     # scatter(Λgrid_measurement_Large/kF, uΛ_Large_Large)
     # xscale("log")
     # show()
-    println(Λgrid_measurement_Large[1]/kF,",",uΛ_Large_Large[1])
+    # println(Λgrid_measurement_Large[1]/kF,",",uΛ_Large_Large[1])
 
 
     # boundary condition
-    ugrid = uΛ_Large_Large 
+    # ugrid = uΛ_Large_Large 
     # ugrid = ones(Float64, length(Λgrid_measurement_Large)) * uΛ_Large_Large[end]
-    # ugrid = ones(Float64, length(Λgrid_measurement_Large)) * 0.0
+    ugrid = ones(Float64, length(Λgrid_measurement_Large)) * 0.0
 
     FsΛ = zeros(Float64, length(Λgrid_measurement_Large))
     a_fit, b_fit = fit_LargeLambda(filename_aLambda_Large, _para)
@@ -828,12 +733,12 @@ for (_rs, _mass2, _beta, _order) in Iterators.product(rs, mass2, beta, order)
     # df_u_inital = DataFrame(CSV.File("csv_final_u/uLambda_inital_rs=$(_rs)_mass2=$(_mass2)_beta=$(_beta).csv"))
     # df_u = DataFrame(CSV.File("csv_final_u/uLambda_final_rs=$(_rs)_mass2=$(_mass2)_beta=$(_beta).csv"))
     # df_f = DataFrame(CSV.File("csv_final_u/fLambda_final_rs=$(_rs)_mass2=$(_mass2)_beta=$(_beta).csv"))
-    # df_f = DataFrame()
-    # df_u = DataFrame()
-    # df_ac = DataFrame()
-    df_f = DataFrame(CSV.File("csv_final_u/fLambda_final_rs=$(_rs)_mass2=$(_mass2)_beta=$(_beta).csv"))
-    df_u = DataFrame(CSV.File("csv_final_u/uLambda_final_rs=$(_rs)_mass2=$(_mass2)_beta=$(_beta).csv"))
-    df_ac = DataFrame(CSV.File("csv_final_u/ac_rs=$(_rs)_mass2=$(_mass2)_beta=$(_beta).csv"))
+    df_f = DataFrame()
+    df_u = DataFrame()
+    df_ac = DataFrame()
+    # df_f = DataFrame(CSV.File("csv_final_u/fLambda_final_rs=$(_rs)_mass2=$(_mass2)_beta=$(_beta).csv"))
+    # df_u = DataFrame(CSV.File("csv_final_u/uLambda_final_rs=$(_rs)_mass2=$(_mass2)_beta=$(_beta).csv"))
+    # df_ac = DataFrame(CSV.File("csv_final_u/ac_rs=$(_rs)_mass2=$(_mass2)_beta=$(_beta).csv"))
 
 
     # u_inital = -0.5
@@ -866,13 +771,13 @@ for (_rs, _mass2, _beta, _order) in Iterators.product(rs, mass2, beta, order)
         # println("a=$(length(asgrid)), u=$(length(ugrid)) ")
         # FsΛ = ElectronLiquidRG.treelevel_RG(_para, Λgrid, asgrid)
         # FsΛ = ElectronLiquidRG.treelevel_RG_iter(_para, FsΛ, Λgrid, asgrid; mix=mix)
-        FsΛ = derive_f_Gamma3(_para, Λgrid, FsΛ, uΛ, coeff_bΛ_Lver3_direct, coeff_z1, n_fit_F; mix=mix)
+        FsΛ = derive_f_Gamma3(_para, Λgrid, FsΛ, uΛ, coeff_bΛ_Lver3_direct, coeff_z1, Fs, cutoff_F, n_fit_F; mix=mix)
         
-        z1Λ = derive_z1Λ(_para, Λgrid, FsΛ, coeff_z1, n_fit_F)
+        z1Λ = derive_z1Λ(_para, Λgrid, FsΛ, coeff_z1, Fs, cutoff_F, n_fit_F)
         # bΛ = derive_bLambda(_para, Λgrid, FsΛ, coeff_bΛ_PP, coeff_bΛ_Lver3_direct, coeff_bΛ_Lver3_exchange, coeff_bΛ_Lver3_bubble, n_fit_F)
         # aΛ = derive_aLambda(_para, Λgrid, FsΛ, Ugrid, coeff_aΛ_PP_PHE, coeff_aΛ_PH, coeff_z1, coeff_bΛ_Lver3_bubble, n_fit_F)
-        bΛ = derive_bLambda(_para, Λgrid, FsΛ, coeff_bΛ_PP, coeff_bΛ_Lver3_direct, coeff_bΛ_Lver3_exchange, coeff_bΛ_Lver3_bubble, n_fit_F)
-        aΛ = derive_aLambda(_para, Λgrid, FsΛ, coeff_aΛ_PP_PHE, coeff_aΛ_PH, coeff_z1, coeff_bΛ_Lver3_bubble, n_fit_F)
+        bΛ = derive_bLambda(_para, Λgrid, FsΛ, coeff_bΛ_PP, coeff_bΛ_Lver3_direct, coeff_bΛ_Lver3_exchange, coeff_bΛ_Lver3_bubble, Fs, cutoff_F, n_fit_F)
+        aΛ = derive_aLambda(_para, Λgrid, FsΛ, coeff_aΛ_PP_PHE, coeff_aΛ_PH, coeff_z1, coeff_bΛ_Lver3_bubble, Fs, cutoff_F, n_fit_F)
         aΛ = - aΛ
         bΛ = - bΛ
         # println("a=$aΛ")
