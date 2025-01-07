@@ -16,37 +16,6 @@ order = [1,]
 isDynamic = true
 
 
-function get_data_aLambda(data, kamp, theta, phi)
-    Nθ = length(theta)
-    Nφ = length(phi)
-    aΛ = [] 
-    for (ki, kΛ) in enumerate(kamp)
-        avg = [0.0, 0.0]
-        avga_theta = zeros(Float64, Nθ)
-        avge_theta = zeros(Float64, Nθ)
-        for (ti, _theta) in enumerate(theta)
-            if Nφ == 1
-                d2 = real(data[2, ti, 1, ki])
-                avga_theta[ti] = d2.val * sin(_theta)
-                avge_theta[ti] = d2.err * sin(_theta)
-            else
-                da_phi = zeros(Float64, Nφ)
-                de_phi = zeros(Float64, Nφ)
-                for (pidx, _phi) in enumerate(phi)
-                    d2 = real(data[2, ti, pidx, ki])
-                    da_phi[pidx] = d2.val
-                    de_phi[pidx] = d2.err
-                end
-                avga_theta[ti] = Interp.integrate1D(da_phi, phi) * sin(_theta) / π
-                avge_theta[ti] = Interp.integrate1D(de_phi, phi) * sin(_theta) / π
-            end
-        end
-        avg[1] = Interp.integrate1D(avga_theta, theta) / 2.0
-        avg[2] = Interp.integrate1D(avge_theta, theta) / 2.0
-        push!(aΛ, measurement.(avg[1], avg[2]))
-    end
-    return aΛ
-end
 
 for (_rs, _mass2, _beta, _order) in Iterators.product(rs, mass2, beta, order)
     _para = UEG.ParaMC(rs=_rs, beta=_beta, Fs=-0.0, order=_order, mass2=_mass2, isDynamic=isDynamic, dim=dim)
@@ -186,56 +155,5 @@ for (_rs, _mass2, _beta, _order) in Iterators.product(rs, mass2, beta, order)
     #     end
     # end
     CSV.write(filename_data_a_PH, da_PH)
-
-
-    # old version
-    # f = jldopen(filename_aPP, "r")
-    # for (idx, F) in enumerate(Fs)
-    #     for key in keys(f)
-    #         para = ParaMC(key)
-    #         para0 = ElectronLiquidRG.get_para(para, -0.0)
-    #         if para0 == _para
-    #             # println("true")
-    #             if isapprox(para.Fs, F) == true
-    #                 # println("Fs=$(F), key_cluster=$(key)")
-    #                 kamp, n, theta, phi, ver4 = f[key]
-    #                 thetagrid = CompositeGrids.SimpleG.Arbitrary(theta)
-    #                 phigrid = CompositeGrids.SimpleG.Arbitrary(phi)
-    #                 # println(thetagrid)
-    #                 data = ver4[(1, 0, 0)]
-    #                 a_PP = get_data_aLambda(data, kamp, thetagrid, phigrid)
-    #                 # println(a_PP)
-    #                 colname = "Fs_$(F)"
-    #                 da_PP_PHE[!, colname] = a_PP
-    #             end
-    #         end
-    #     end
-    # end
-
-    # f = jldopen(filename_aPH, "r")
-    # for (idx, F) in enumerate(Fs)
-    #     for key in keys(f)
-    #         para = ParaMC(key)
-    #         para0 = ElectronLiquidRG.get_para(para, -0.0)
-    #         if para0 == _para
-    #             # println("true")
-    #             if isapprox(para.Fs, F) == true
-    #                 # println("Fs=$(F), key_cluster=$(key)")
-    #                 kamp, n, theta, phi, ver4 = f[key]
-    #                 thetagrid = CompositeGrids.SimpleG.Arbitrary(theta)
-    #                 phigrid = CompositeGrids.SimpleG.Arbitrary(phi)
-    #                 data = ver4[(1, 0, 0)]
-    #                 a_PH = get_data_aLambda(data, kamp, thetagrid, phigrid)
-    #                 colname = "Fs_$(F)"
-    #                 da_PH[!, colname] = a_PH
-    #             end
-    #         end
-    #     end
-    # end
-
-    
-    
-    # test = DataFrame(CSV.File(filename_data_a_PP_PHE))
-    # println(test)
 end
 
