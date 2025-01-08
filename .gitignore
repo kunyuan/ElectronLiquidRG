@@ -24,6 +24,7 @@ RG/*/*.csv
 RG/*/*.jld2
 RG/*/*.pdf
 RG/*/*.jl
+RG_Roff/
 
 __pycache__
 .ipynb_checkpoints
